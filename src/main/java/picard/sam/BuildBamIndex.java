@@ -101,6 +101,7 @@ public class BuildBamIndex extends CommandLineProgram {
             }
         }
 
+        //TODO: this needs a Path overload
         IOUtil.assertFileIsWritable(OUTPUT.toPath().toFile());
         final SamReader bam;
 
