@@ -95,6 +95,7 @@ dependencies {
     compile 'org.apache.logging.log4j:log4j-api:2.17.1'
     compile 'org.apache.logging.log4j:log4j-core:2.17.1'
     compileOnly(googleNio)
+    testCompile(googleNio)
 
     // javadoc utilities; compile/test only to prevent redistribution of sdk jars
     compileOnly(javadocJDKFiles)
@@ -214,12 +215,42 @@ task cloudJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) 
 // legacy command line parser syntax.
 task legacyTest(type: Test) {
     systemProperty 'picard.useLegacyParser', 'true'
+
+    useTestNG {
+        if (OperatingSystem.current().isUnix()) {
+            excludeGroups "slow", "broken", "cloud"
+        } else {
+            excludeGroups "slow", "broken", "unix", "cloud"
+        }
+    }
 }
 
 // Run the tests using the Barclay command line parser (useLegacyParser=false), which requires
 // conversion of test command lines from Picard-style command line syntax to Barclay-style syntax.
 task barclayTest(type: Test) {
     systemProperty 'picard.convertCommandLine', 'true'
+
+    useTestNG {
+        if (OperatingSystem.current().isUnix()) {
+            excludeGroups "slow", "broken", "cloud"
+        } else {
+            excludeGroups "slow", "broken", "unix", "cloud"
+        }
+    }
+}
+
+task cloudTest(type: Test) {
+    systemProperty 'picard.useLegacyParser', 'true'
+    description = "run test that requires cloud connectivity"
+
+    useTestNG {
+        includeGroups "cloud" // tsato: this is like, useTestNG.includeGroups("cloud")
+        if (OperatingSystem.current().isUnix()) {
+            excludeGroups "slow", "broken"
+        } else {
+            excludeGroups "slow", "broken", "unix"
+        }
+    }
 }
 
 // Run tests using both the legacy and barclay command line parsers.
@@ -230,14 +261,6 @@ test {
 tasks.withType(Test) {
     outputs.upToDateWhen { false } // tests will always rerun
     description = "Runs the unit tests"
-
-    useTestNG {
-        if (OperatingSystem.current().isUnix()) {
-            excludeGroups "slow", "broken"
-        } else {
-            excludeGroups "slow", "broken", "unix"
-        }
-    }
 
     // set heap size for the test JVM(s)
     minHeapSize = "1G"
