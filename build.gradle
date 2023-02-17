@@ -81,10 +81,7 @@ dependencies {
     implementation 'org.apache.logging.log4j:log4j-api:2.17.1'
     implementation 'org.apache.logging.log4j:log4j-core:2.17.1'
     implementation 'org.openjdk.nashorn:nashorn-core:15.4'
-
-    //NOTE: this dependency spec causes doc gen to fail on FingerPrintChecker since doc gen is not
-    // a compile time task
-    compileOnly(googleNio)
+    implementation(googleNio)
 
     testImplementation 'org.testng:testng:6.14.3'
     implementation 'org.apache.commons:commons-lang3:3.6'
