@@ -62,8 +62,7 @@ jobs:
 
       - name: Run tests
         env:
-          CLOUD_TEST:
-            ${{matrix.cloud}} ? "cloud" : ""
+          CLOUD_TEST: ${{matrix.cloud && "cloud" || "" }}
         run: |
           if [[ ${{matrix.run_barclay_tests}} == true ]]; then
             echo "Running tests using the Barclay command line parser."
