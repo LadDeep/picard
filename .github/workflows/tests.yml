@@ -30,7 +30,7 @@ jobs:
       matrix:
         java: [ 17 ]
         experimental: [false]
-        cloud: ${{ needs.check-secrets.outputs.google-credentials ? [true, false], [false] }}
+        cloud: ${{ needs.check-secrets.outputs.google-credentials && [true, false] || [false] }}
         run_barclay_tests: [true, false]
       fail-fast: false
     continue-on-error: ${{ matrix.experimental }}
