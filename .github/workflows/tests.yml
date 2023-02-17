@@ -8,16 +8,34 @@ on:
   workflow_dispatch:
 
 jobs:
+  ## This workaround is necessary since there is no equivalent to the old TRAVIS_SECURE_ENVIRONMENT variable that indicated
+  ## if a run was privileged and had secrets. Since the GCP credentials are necessary for all tests in order to upload their,
+  ## results that makes them a reasonable proxy for testing the credentials of this entire execution. https://github.com/actions/runner/issues/520
+  check-secrets:
+    name: check if the environment has privileges
+    outputs:
+      google-credentials: ${{ steps.google-credentials.outputs.defined }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: google-credentials
+        env:
+          GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        if: "${{ env.GCP_CREDENTIALS != '' }}"
+        run: echo "::set-output name=defined::true"
+
   test:
+    needs: [check-secrets]
     runs-on: ubuntu-latest
     strategy:
       matrix:
         java: [ 17 ]
         experimental: [false]
+        cloud:
+          ${{ needs.check-secrets.outputs.google-credentials }} ? [true, false] : [false]
         run_barclay_tests: [true, false]
       fail-fast: false
     continue-on-error: ${{ matrix.experimental }}
-    name: Java ${{ matrix.Java }}, Barclay=${{ matrix.run_barclay_tests}} tests
+    name: Java ${{ matrix.Java }}, Barclay=${{ matrix.run_barclay_tests}} Cloud=${{matrix.cloud}}
     steps:
       - uses: actions/checkout@v3
       - name: Set up java ${{ matrix.Java }}
@@ -35,7 +53,18 @@ jobs:
         run: chmod +x gradlew
       - name: Compile with Gradle
         run: ./gradlew compileJava
+
+      - name: GCloud Auth
+        if: {{matrix.cloud}}
+        uses: google-github-actions/auth@v0
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+          project_id: ${{ env.HELLBENDER_TEST_PROJECT }}
+
       - name: Run tests
+        env:
+          CLOUD_TEST:
+            ${{matrix.cloud}} ? "cloud" : ""
         run: |
           if [[ ${{matrix.run_barclay_tests}} == true ]]; then
             echo "Running tests using the Barclay command line parser."
@@ -54,6 +83,3 @@ jobs:
         with:
           name: test-results-${{ matrix.Java }}-barclay-${{ matrix.run_barclay_tests}}
           path: build/reports/tests
-
-
-

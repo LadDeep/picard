@@ -1,3 +1,4 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 import org.gradle.internal.os.OperatingSystem
 
 buildscript {
@@ -59,15 +60,6 @@ ensureBuildPrerequisites(buildPrerequisitesMessage)
 
 final htsjdkVersion = System.getProperty('htsjdk.version', '3.0.1')
 final googleNio = 'com.google.cloud:google-cloud-nio:0.123.25'
-
-configurations {
-    cloudConfiguration {
-        extendsFrom implementation
-        dependencies {
-            cloudConfiguration(googleNio)
-        }
-    }
-}
 
 dependencies {
     implementation('com.intel.gkl:gkl:0.8.8') {
@@ -184,13 +176,6 @@ shadowJar {
     finalizedBy currentJar
 }
 
-
-task cloudJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar)  {
-    configurations = [project.configurations.cloudConfiguration]
-    from project.sourceSets.main.output
-    archiveName 'picardcloud.jar'
-}
-
 // Run the tests using the legacy parser only. Assumes that test code is written using
 // legacy command line parser syntax.
 task legacyTest(type: Test) {
@@ -217,11 +202,15 @@ tasks.withType(Test) {
             '--add-opens', 'java.base/java.io=ALL-UNNAMED'
     ]
 
+    String TEST_TYPE = "$System.env.TEST_TYPE"
     useTestNG {
-        if (OperatingSystem.current().isUnix()) {
-            excludeGroups "slow", "broken"
+        List<String> toExclude = ["slow", "broken"]
+        toExclude += !OperatingSystem.current().isUnix() ? "unix" : []
+        if(TEST_TYPE == "cloud"){
+            includeGroups "cloud"
+            excludeGroups toExclude
         } else {
-            excludeGroups "slow", "broken", "unix"
+            excludeGroups toExclude + ["cloud"]
         }
     }
 
