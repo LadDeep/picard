@@ -30,8 +30,7 @@ jobs:
       matrix:
         java: [ 17 ]
         experimental: [false]
-        cloud:
-          ${{ needs.check-secrets.outputs.google-credentials }} ? [true, false] : [false]
+        cloud: [ ${{ needs.check-secrets.outputs.google-credentials }}, false]
         run_barclay_tests: [true, false]
       fail-fast: false
     continue-on-error: ${{ matrix.experimental }}
@@ -55,7 +54,7 @@ jobs:
         run: ./gradlew compileJava
 
       - name: GCloud Auth
-        if: {{matrix.cloud}}
+        if: ${{matrix.cloud}}
         uses: google-github-actions/auth@v0
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
