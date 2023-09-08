@@ -13,13 +13,15 @@ plugins {
     id 'jacoco'
     id 'application'
     id 'com.palantir.git-version' version '0.5.1'
-    id 'com.github.johnrengelman.shadow' version '5.1.0'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
     id "com.github.kt3k.coveralls" version '2.6.3'
-    id "org.ajoberstar.grgit" version "4.0.0-rc.1"
+    id "org.ajoberstar.grgit" version "5.2.0"
     id "org.ajoberstar.git-publish" version "2.1.1"
 }
 
-mainClassName = "picard.cmdline.PicardCommandLine"
+application {
+    mainClass = "picard.cmdline.PicardCommandLine"
+}
 
 repositories {
     mavenCentral()
@@ -57,37 +59,26 @@ def ensureBuildPrerequisites(buildPrerequisitesMessage) {
 
 ensureBuildPrerequisites(buildPrerequisitesMessage)
 
-final htsjdkVersion = System.getProperty('htsjdk.version', '3.0.1')
-final googleNio = 'com.google.cloud:google-cloud-nio:0.123.25'
-
-configurations {
-    cloudConfiguration {
-        extendsFrom implementation
-        dependencies {
-            cloudConfiguration(googleNio)
-        }
-    }
-}
-
+final htsjdkVersion = System.getProperty('htsjdk.version', '3.0.5')
 dependencies {
-    implementation('com.intel.gkl:gkl:0.8.8') {
+    implementation('com.intel.gkl:gkl:0.8.11') {
         exclude module: 'htsjdk'
     }
-    implementation 'com.google.guava:guava:15.0'
-    implementation 'org.apache.commons:commons-math3:3.5'
-    implementation 'org.apache.commons:commons-collections4:4.3'
+    implementation 'org.broadinstitute:gatk-native-bindings:1.0.0' //this should be redundant when GKL is updated past 0.8.11
+
+    implementation 'com.google.guava:guava:32.1.1-jre'
+    implementation 'org.apache.commons:commons-math3:3.6.1'
+    implementation 'org.apache.commons:commons-collections4:4.4'
     implementation 'com.github.samtools:htsjdk:' + htsjdkVersion
     implementation 'org.broadinstitute:barclay:5.0.0'
-    implementation 'org.apache.logging.log4j:log4j-api:2.17.1'
-    implementation 'org.apache.logging.log4j:log4j-core:2.17.1'
+    implementation 'org.apache.logging.log4j:log4j-api:2.20.0'
+    implementation 'org.apache.logging.log4j:log4j-core:2.20.0'
     implementation 'org.openjdk.nashorn:nashorn-core:15.4'
+    implementation 'org.apache.commons:commons-lang3:3.12.0'
+    implementation 'com.google.cloud:google-cloud-nio:0.127.0'
+    implementation 'commons-io:commons-io:2.11.0'
 
-    //NOTE: this dependency spec causes doc gen to fail on FingerPrintChecker since doc gen is not
-    // a compile time task
-    compileOnly(googleNio)
-
-    testImplementation 'org.testng:testng:6.14.3'
-    implementation 'org.apache.commons:commons-lang3:3.6'
+    testImplementation 'org.testng:testng:7.7.0'
 }
 
 configurations.all {
@@ -97,8 +88,10 @@ configurations.all {
     }
 }
 
-sourceCompatibility = 1.17
-targetCompatibility = 1.17
+java {
+    sourceCompatibility = 1.17
+    targetCompatibility = 1.17
+}
 
 final isRelease = Boolean.getBoolean("release")
 final gitVersion = gitVersion().replaceAll(".dirty", "")
@@ -175,6 +168,10 @@ task picardDoc(type: Javadoc, dependsOn: ['cleanPicardDoc', classes]) {
     options.addStringOption("absolute-version", getVersion())
     options.addStringOption("build-timestamp", new Date().format("dd-mm-yyyy hh:mm:ss"))
     options.addStringOption("verbose")
+    // Avoid 'javadoc: error - invalid flag: -notimestamp'. See:
+    //   - https://github.com/gradle/gradle/issues/11898
+    //   - https://github.com/gradle/gradle/issues/11898#issuecomment-993789034
+    options.noTimestamp(false)
 }
 
 task currentJar(type: Copy){
@@ -185,13 +182,6 @@ task currentJar(type: Copy){
 
 shadowJar {
     finalizedBy currentJar
-}
-
-
-task cloudJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar)  {
-    configurations = [project.configurations.cloudConfiguration]
-    from project.sourceSets.main.output
-    archiveName 'picardcloud.jar'
 }
 
 // Run the tests using the legacy parser only. Assumes that test code is written using
@@ -221,10 +211,21 @@ tasks.withType(Test) {
     ]
 
     useTestNG {
-        if (OperatingSystem.current().isUnix()) {
-            excludeGroups "slow", "broken"
+        List excludes = ["slow", "broken"]
+        if( !OperatingSystem.current().isUnix() ) {
+            excludes << "unix"
+        }
+        String TEST_TYPE = "$System.env.TEST_TYPE"
+        if (TEST_TYPE == "cloud") {
+            // run only the cloud tests
+            includeGroups "cloud", "bucket"
+            excludeGroups(*excludes)
+        } else if (TEST_TYPE == "all") {
+            //include everything
+            excludeGroups(*excludes)
         } else {
-            excludeGroups "slow", "broken", "unix"
+            excludes.addAll("cloud", "bucket")
+            excludeGroups(*excludes);
         }
     }
 
@@ -273,13 +274,13 @@ jacocoTestReport {
     getAdditionalSourceDirs().from(sourceSets.main.allJava.srcDirs)
 
     reports {
-        xml.enabled = true // coveralls plugin depends on xml format report
-        html.enabled = true
+        xml.required = true // coveralls plugin depends on xml format report
+        html.required = true
     }
 }
 
 wrapper {
-    gradleVersion = '7.5.1'
+    gradleVersion = '8.2.1'
 }
 
 task javadocJar(type: Jar) {
@@ -372,7 +373,7 @@ publish {
 ext.htmlDir = file("build/docs/html")
 
 //update static web docs
-task copyJavadoc(dependsOn: 'javadoc', type: Copy) {
+task copyJavadoc(dependsOn: ['javadoc', 'picardDoc'], type: Copy) {
     from 'build/docs/javadoc'
     into "$htmlDir/javadoc"
 }
@@ -396,5 +397,18 @@ gitPublish {
         from('build/docs/html') { 
             into 'newdocs' 
         } 
+    }
+}
+
+gitPublishCopy {
+    dependsOn 'updateGhPages', 'copyJavadoc', 'copyPicardDoc'
+}
+
+// For Gradle 8 explicitly add 'currentJar' as a dependency of the following tasks.
+// For more information, please refer to
+// https://docs.gradle.org/8.2.1/userguide/validation_problems.html#implicit_dependency in the Gradle documentation.
+['distZip', 'distTar', 'startScripts', 'startShadowScripts', 'generateMetadataFileForPicardPublication'].each {
+    tasks.named(it).configure {
+        dependsOn 'currentJar'
     }
 }

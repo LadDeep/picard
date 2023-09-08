@@ -204,21 +204,17 @@ public abstract class CommandLineProgram {
             final String info    = String.format(message, this.getClass().getSimpleName(), syntax);
             Log.getInstance(this.getClass()).info(info);
         }
+
         if (!parseArgs(actualArgs)) {
             return 1;
         }
-
-        // Provide one temp directory if the caller didn't
-        if (this.TMP_DIR == null) this.TMP_DIR = new ArrayList<>();
-        if (this.TMP_DIR.isEmpty()) TMP_DIR.add(IOUtil.getDefaultTmpDir());
-
+        
         // Build the default headers
         final Date startDate = new Date();
         this.defaultHeaders.add(new StringHeader(commandLine));
         this.defaultHeaders.add(new StringHeader("Started on: " + startDate));
 
         Log.setGlobalLogLevel(VERBOSITY);
-        SamReaderFactory.setDefaultValidationStringency(VALIDATION_STRINGENCY);
 
         // Set the compression level everywhere we can think of
         BlockCompressedOutputStream.setDefaultCompressionLevel(COMPRESSION_LEVEL);
@@ -240,15 +236,6 @@ public abstract class CommandLineProgram {
             SAMFileWriterFactory.setDefaultCreateMd5File(CREATE_MD5_FILE);
         }
 
-        for (final File f : TMP_DIR) {
-            // Intentionally not checking the return values, because it may be that the program does not
-            // need a tmp_dir. If this fails, the problem will be discovered downstream.
-            if (!f.exists()) f.mkdirs();
-            f.setReadable(true, false);
-            f.setWritable(true, false);
-            System.setProperty("java.io.tmpdir", f.getAbsolutePath()); // in loop so that last one takes effect
-        }
-
         if (!USE_JDK_DEFLATER) {
             BlockCompressedOutputStream.setDefaultDeflaterFactory(new IntelDeflaterFactory());
         }
@@ -256,6 +243,10 @@ public abstract class CommandLineProgram {
         if (!USE_JDK_INFLATER) {
             BlockGunzipper.setDefaultInflaterFactory(new IntelInflaterFactory());
         }
+
+        // This has to happen after the inflater factory is set because it causes a reinitialization of the static
+        // default reader factory.  At least until https://github.com/samtools/htsjdk/issues/1666 is resolved
+        SamReaderFactory.setDefaultValidationStringency(VALIDATION_STRINGENCY);
 
         if (!QUIET) {
             System.err.println("[" + new Date() + "] " + commandLine);
@@ -343,6 +334,24 @@ public abstract class CommandLineProgram {
             return false;
         }
         REFERENCE_SEQUENCE = referenceSequence.getReferenceFile();
+
+        // The TMP_DIR setting section below was moved from instanceMain() to here due to timing issues
+        // related to checking whether R is installed. Certain programs, such as CollectInsertSizeMetrics
+        // override the customCommandLineValidation() with a call to RExecutor, which in turn writes an
+        // R script into the tmp directory, which used to be the system default before this change.
+
+        // Provide one temp directory if the caller didn't
+        if (this.TMP_DIR == null) this.TMP_DIR = new ArrayList<>(); // This line looks redundant due to defaults
+        if (this.TMP_DIR.isEmpty()) TMP_DIR.add(IOUtil.getDefaultTmpDir());
+
+        for (final File f : TMP_DIR) {
+            // Intentionally not checking the return values, because it may be that the program does not
+            // need a tmp_dir. If this fails, the problem will be discovered downstream.
+            if (!f.exists()) f.mkdirs();
+            f.setReadable(true, false);
+            f.setWritable(true, false);
+            System.setProperty("java.io.tmpdir", f.getAbsolutePath()); // in loop so that last one takes effect
+        }
 
         final String[] customErrorMessages = customCommandLineValidation();
         if (customErrorMessages != null) {
